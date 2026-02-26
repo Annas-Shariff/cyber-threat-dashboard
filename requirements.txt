@@ -35,6 +35,6 @@ apscheduler==3.10.4
 # Redis cache
 redis==5.0.1
 
-# Report generation (Module 4)
-kaleido==0.2.1
-reportlab==4.1.0
+# Report generation — kaleido/reportlab loaded lazily inside PDF callback only
+# kaleido==0.2.1   ← removed: downloads Chromium binary, breaks Render free tier build
+# reportlab==4.1.0 ← removed: loaded on demand, not needed at startup
