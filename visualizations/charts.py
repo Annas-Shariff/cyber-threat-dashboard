@@ -330,7 +330,11 @@ def build_top_countries_bar(country_data: List[dict], top_n: int = 15) -> go.Fig
     if not country_data:
         return _empty_fig("No geographic data")
 
-    df = pd.DataFrame(country_data).head(top_n).sort_values("count", ascending=True)
+    df = pd.DataFrame(country_data)
+    df = df[df["country"].notna() & (df["country"] != "None") & (df["country"] != "")]
+    if df.empty:
+        return _empty_fig("No geographic data")
+    df = df.head(top_n).sort_values("count", ascending=True)
 
     # Color by avg severity (green → red scale)
     colors = []

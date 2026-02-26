@@ -239,11 +239,25 @@ def get_hourly_counts(hours_back: int = 48,
     return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
 
 
+def get_avg_severity_score(hours_back: int = 24,
+                           attack_type: str = None, severity: str = None) -> float:
+    """Compute true average severity_score directly from MongoDB (no event cap)."""
+    pipeline = [
+        {"$match": _match(hours_back, attack_type, severity)},
+        {"$group": {"_id": None, "avg": {"$avg": "$severity_score"}}},
+    ]
+    result = list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
+    if result and result[0].get("avg") is not None:
+        return round(result[0]["avg"], 1)
+    return 0.0
+
+
 def get_country_counts(hours_back: int = 24,
                        attack_type: str = None, severity: str = None) -> List[dict]:
     """Geo data for choropleth map."""
     base = _match(hours_back, attack_type, severity)
     base["source_geo.country_code"] = {"$ne": None}
+    base["source_geo.country"]      = {"$ne": None}
     pipeline = [
         {"$match": base},
         {

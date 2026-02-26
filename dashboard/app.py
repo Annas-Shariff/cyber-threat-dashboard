@@ -41,7 +41,7 @@ from config.database import (
     get_hourly_counts, get_hourly_counts_by_type,
     get_country_counts, get_mitre_technique_counts,
     get_top_cves, get_severity_distribution,
-    get_event_count, ensure_indexes
+    get_event_count, get_avg_severity_score, ensure_indexes
 )
 from visualizations.charts import (
     build_timeseries_chart, build_attack_type_bar,
@@ -355,6 +355,7 @@ app.layout = html.Div([
     dcc.Store(id="store-cves"),
     dcc.Store(id="store-severity"),
     dcc.Store(id="store-total-count"),
+    dcc.Store(id="store-avg-severity"),
 
     # Header
     html.Div([
@@ -473,6 +474,7 @@ def _tab_selected_style():
     Output("store-cves",            "data"),
     Output("store-severity",        "data"),
     Output("store-total-count",     "data"),
+    Output("store-avg-severity",    "data"),
     Output("last-update",           "children"),
     Input("auto-refresh",           "n_intervals"),
     Input("btn-refresh",            "n_clicks"),
@@ -494,14 +496,15 @@ def load_data(n_intervals, n_clicks, hours, attack_type, severity):
         cves_raw        = get_top_cves(limit=25)
         severity_raw    = get_severity_distribution(hours_back=hours, attack_type=at, severity=sv)
         total_count     = get_event_count(hours_back=hours, attack_type=at, severity=sv)
+        avg_severity    = get_avg_severity_score(hours_back=hours, attack_type=at, severity=sv)
 
         ts = datetime.utcnow().strftime("Updated %H:%M:%S UTC")
         return (events_raw, country_raw, hourly_raw, hourly_type_raw,
-                attack_raw, mitre_raw, cves_raw, severity_raw, total_count, ts)
+                attack_raw, mitre_raw, cves_raw, severity_raw, total_count, avg_severity, ts)
 
     except Exception as e:
         logger.error(f"Data load failed: {e}")
-        return [], [], [], [], [], [], [], [], 0, f"Error: {str(e)[:40]}"
+        return [], [], [], [], [], [], [], [], 0, 0.0, f"Error: {str(e)[:40]}"
 
 
 # 2. (Tab content is pre-rendered inline in dcc.Tabs — no dynamic render callback needed)
@@ -515,25 +518,29 @@ def load_data(n_intervals, n_clicks, hours, attack_type, severity):
     Output("kpi-countries", "children"),
     Output("kpi-avg-sev",   "children"),
     Output("kpi-top-type",  "children"),
-    Input("store-events",       "data"),
-    Input("store-country",      "data"),
-    Input("store-total-count",  "data"),
-    Input("store-severity",     "data"),
+    Input("store-events",        "data"),
+    Input("store-country",       "data"),
+    Input("store-total-count",   "data"),
+    Input("store-severity",      "data"),
+    Input("store-avg-severity",  "data"),
 )
-def update_kpis(events, country_data, total_count, severity_data):
+def update_kpis(events, country_data, total_count, severity_data, avg_severity):
     kpi = compute_kpi_stats(events or [])
-    # Use real total from DB count (not the 500-event capped list)
-    real_total = total_count if total_count else kpi["total_events"]
+    # Accurate total from DB count (no 500-event cap)
+    real_total    = total_count if total_count else kpi["total_events"]
+    # Accurate avg severity from direct MongoDB aggregation (no cap)
+    real_avg_sev  = avg_severity if avg_severity else kpi["avg_severity"]
+    # Country count from filtered geo data
     country_count = len(country_data) if country_data else kpi["unique_countries"]
-    # Critical count from severity aggregation (accurate, not capped)
-    critical_count = next((s["count"] for s in (severity_data or []) if s.get("severity") == "Critical"), kpi["critical_count"])
+    # Critical / High counts from filtered severity distribution
+    critical_count = next((s["count"] for s in (severity_data or []) if s.get("severity") == "Critical"), 0)
     high_count     = next((s["count"] for s in (severity_data or []) if s.get("severity") == "High"),     0)
     return (
         f"{real_total:,}",
-        str(critical_count),
-        str(high_count),
+        f"{critical_count:,}",
+        f"{high_count:,}",
         str(country_count),
-        str(kpi["avg_severity"]),
+        str(real_avg_sev),
         kpi["top_attack_type"],
     )
 
