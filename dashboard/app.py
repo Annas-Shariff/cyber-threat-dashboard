@@ -71,11 +71,6 @@ app = dash.Dash(
 )
 server = app.server   # expose for gunicorn: gunicorn app:server
 
-# Inject ML service WebSocket URL so alerts.js can find it in production
-ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8001")
-_ws_url = ML_SERVICE_URL.replace("https://", "wss://").replace("http://", "ws://") + "/ws/alerts"
-server.config["WS_ALERTS_URL"] = _ws_url
-
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -345,9 +340,6 @@ def tab_live_feed():
 # ══ Main Layout ════════════════════════════════════════════════════════════════
 
 app.layout = html.Div([
-    # Inject WS URL for alerts.js (works locally + on Render)
-    html.Script(f"window.CYBER_WS_URL = '{_ws_url}';"),
-
     # Auto-refresh interval
     dcc.Interval(id="auto-refresh", interval=REFRESH_INTERVAL_MS, n_intervals=0),
 

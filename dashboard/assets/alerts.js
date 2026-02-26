@@ -7,8 +7,7 @@
 (function () {
   "use strict";
 
-  // Use injected URL from Dash (works on Render), fallback to localhost for dev
-  const WS_URL = window.CYBER_WS_URL || "ws://localhost:8001/ws/alerts";
+  const WS_URL = "ws://localhost:8001/ws/alerts";
   const MAX_TOASTS = 5;        // max visible toasts at once
   const TOAST_DURATION = 8000; // ms before auto-dismiss
 
