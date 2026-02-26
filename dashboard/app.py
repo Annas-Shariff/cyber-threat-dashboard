@@ -417,18 +417,18 @@ app.layout = html.Div([
         }),
     ], style={"padding": "0 24px 8px", "display": "flex", "flexDirection": "column"}),
 
-    # Tabs
+    # Tabs — all content pre-rendered so chart IDs always exist in the DOM
+    # This ensures dropdown filter callbacks always find their output components
     dcc.Tabs(id="tabs", value="overview", style={
         "fontFamily": "Rajdhani, monospace",
         "backgroundColor": "#050a0f",
     }, children=[
-        dcc.Tab(label="Overview",   value="overview",  style=_tab_style(), selected_style=_tab_selected_style()),
-        dcc.Tab(label="Geo Map",    value="geo",       style=_tab_style(), selected_style=_tab_selected_style()),
-        dcc.Tab(label="MITRE",      value="mitre",     style=_tab_style(), selected_style=_tab_selected_style()),
-        dcc.Tab(label="CVEs",       value="cve",       style=_tab_style(), selected_style=_tab_selected_style()),
-        dcc.Tab(label="Live Feed",  value="feed",      style=_tab_style(), selected_style=_tab_selected_style()),
+        dcc.Tab(label="Overview",  value="overview", style=_tab_style(), selected_style=_tab_selected_style(), children=tab_overview()),
+        dcc.Tab(label="Geo Map",   value="geo",      style=_tab_style(), selected_style=_tab_selected_style(), children=tab_geo()),
+        dcc.Tab(label="MITRE",     value="mitre",    style=_tab_style(), selected_style=_tab_selected_style(), children=tab_mitre()),
+        dcc.Tab(label="CVEs",      value="cve",      style=_tab_style(), selected_style=_tab_selected_style(), children=tab_cve()),
+        dcc.Tab(label="Live Feed", value="feed",     style=_tab_style(), selected_style=_tab_selected_style(), children=tab_live_feed()),
     ]),
-    html.Div(id="tab-content", style={"padding": "16px 24px 40px"}),
 
 ], style={
     "backgroundColor": "#050a0f",
@@ -503,15 +503,7 @@ def load_data(n_intervals, n_clicks, hours, attack_type, severity):
         return [], [], [], [], [], [], [], f"Error: {str(e)[:40]}"
 
 
-# 2. Render tab content
-@app.callback(Output("tab-content", "children"), Input("tabs", "value"))
-def render_tab(tab):
-    if tab == "overview":  return tab_overview()
-    if tab == "geo":       return tab_geo()
-    if tab == "mitre":     return tab_mitre()
-    if tab == "cve":       return tab_cve()
-    if tab == "feed":      return tab_live_feed()
-    return html.Div("Select a tab")
+# 2. (Tab content is pre-rendered inline in dcc.Tabs — no dynamic render callback needed)
 
 
 # 3. KPI cards
