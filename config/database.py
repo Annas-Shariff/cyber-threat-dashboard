@@ -211,10 +211,11 @@ def get_hourly_counts_by_type(hours_back: int = 48,
 
 
 def get_attack_type_counts(hours_back: int = 24,
+                           attack_type: str = None,
                            severity: str = None) -> List[dict]:
     """Aggregate attack counts by type for bar charts."""
     pipeline = [
-        {"$match": _match(hours_back, severity=severity)},
+        {"$match": _match(hours_back, attack_type, severity)},
         {"$group": {"_id": "$attack_type", "count": {"$sum": 1}}},
         {"$project": {"attack_type": "$_id", "count": 1, "_id": 0}},
         {"$sort": {"count": -1}}
