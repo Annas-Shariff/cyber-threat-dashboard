@@ -42,7 +42,8 @@ from config.database import (
     get_hourly_counts, get_hourly_counts_by_type,
     get_country_counts, get_mitre_technique_counts,
     get_top_cves, get_severity_distribution,
-    get_event_count, get_avg_severity_score, ensure_indexes
+    get_event_count, get_avg_severity_score, ensure_indexes,
+    get_alerts, get_unresolved_alert_count,
 )
 from visualizations.charts import (
     build_timeseries_chart, build_attack_type_bar,
@@ -340,6 +341,109 @@ def tab_live_feed():
     ], style=STYLE["panel"])
 
 
+# ── Alert Card Component ───────────────────────────────────────────────────────
+
+ALERT_TYPE_LABELS = {
+    "severity_spike":    "Severity Spike",
+    "volume_spike":      "Volume Spike",
+    "ransomware_detected": "Ransomware",
+    "critical_cve":      "Critical CVE",
+    "anomaly_detected":  "ML Anomaly",
+}
+
+def alert_card(alert: dict) -> html.Div:
+    sev     = alert.get("severity", "High")
+    color   = SEVERITY_COLORS.get(sev, "#527a99")
+    emoji   = {"Critical": "🔴", "High": "🟠", "Medium": "🟡", "Low": "🟢"}.get(sev, "⚪")
+    atype   = ALERT_TYPE_LABELS.get(alert.get("alert_type", ""), alert.get("alert_type", "Alert"))
+    title   = alert.get("title", "Alert")
+    message = (alert.get("message") or "")[:400]
+    ts      = str(alert.get("created_at", ""))[:19].replace("T", " ")
+    resolved = alert.get("resolved", False)
+    count   = alert.get("event_count", 0)
+
+    bg_opacity = "0.03" if resolved else "0.06"
+
+    return html.Div([
+        # Header row
+        html.Div([
+            html.Span(f"{emoji} {sev.upper()}", style={
+                "color": color,
+                "fontFamily": "Share Tech Mono, monospace",
+                "fontSize": "10px", "fontWeight": "700",
+                "marginRight": "12px", "letterSpacing": "1px",
+            }),
+            html.Span(f"· {atype} ·", style={
+                "color": "#527a99", "fontFamily": "Share Tech Mono, monospace",
+                "fontSize": "10px", "marginRight": "12px",
+            }),
+            html.Span(f"{count} event{'s' if count != 1 else ''}", style={
+                "color": "#355a7a", "fontFamily": "Share Tech Mono, monospace",
+                "fontSize": "10px",
+            }),
+            html.Span(ts, style={
+                "color": "#355a7a", "fontFamily": "Share Tech Mono, monospace",
+                "fontSize": "10px", "marginLeft": "auto",
+            }),
+            html.Span(
+                "✓ RESOLVED" if resolved else "● ACTIVE",
+                style={
+                    "color": "#00ff88" if resolved else color,
+                    "fontFamily": "Share Tech Mono, monospace",
+                    "fontSize": "9px", "letterSpacing": "1px",
+                    "marginLeft": "12px",
+                    "border": f"1px solid {'#00ff88' if resolved else color}",
+                    "borderRadius": "3px", "padding": "1px 5px",
+                }
+            ),
+        ], style={"display": "flex", "alignItems": "center", "marginBottom": "8px"}),
+
+        # Title
+        html.Div(title, style={
+            "color": color if not resolved else "#527a99",
+            "fontFamily": "Rajdhani, monospace",
+            "fontWeight": "700", "fontSize": "14px",
+            "marginBottom": "8px",
+        }),
+
+        # Message body
+        html.Pre(message, style={
+            "color": "#8fb4c8" if not resolved else "#355a7a",
+            "fontFamily": "Share Tech Mono, monospace",
+            "fontSize": "10px", "whiteSpace": "pre-wrap",
+            "margin": "0", "lineHeight": "1.6",
+        }),
+    ], style={
+        "padding": "14px 16px",
+        "borderLeft": f"3px solid {color}",
+        "marginBottom": "10px",
+        "backgroundColor": f"rgba(255,255,255,{bg_opacity})",
+        "borderRadius": "0 6px 6px 0",
+        "opacity": "0.55" if resolved else "1.0",
+    })
+
+
+def tab_alerts():
+    return html.Div([
+        # Summary bar
+        html.Div([
+            html.Div(id="alerts-summary", style={
+                "fontFamily": "Share Tech Mono, monospace",
+                "fontSize": "11px", "color": "#527a99",
+            }),
+        ], style={
+            "display": "flex", "alignItems": "center",
+            "marginBottom": "14px", "paddingBottom": "10px",
+            "borderBottom": "1px solid #0f3a5c",
+        }),
+        # Alert cards container
+        html.Div(id="alerts-container", style={
+            "maxHeight": "680px", "overflowY": "auto",
+            "paddingRight": "4px",
+        }),
+    ], style=STYLE["panel"])
+
+
 # ══ Main Layout ════════════════════════════════════════════════════════════════
 
 app.layout = html.Div([
@@ -357,6 +461,7 @@ app.layout = html.Div([
     dcc.Store(id="store-severity"),
     dcc.Store(id="store-total-count"),
     dcc.Store(id="store-avg-severity"),
+    dcc.Store(id="store-alerts"),
 
     # Header
     html.Div([
@@ -441,6 +546,7 @@ app.layout = html.Div([
         dcc.Tab(label="MITRE",     value="mitre",    style=_tab_style(), selected_style=_tab_selected_style(), children=tab_mitre()),
         dcc.Tab(label="CVEs",      value="cve",      style=_tab_style(), selected_style=_tab_selected_style(), children=tab_cve()),
         dcc.Tab(label="Live Feed", value="feed",     style=_tab_style(), selected_style=_tab_selected_style(), children=tab_live_feed()),
+        dcc.Tab(id="tab-alerts-label", label="⚠ Alerts", value="alerts", style=_tab_style(), selected_style={**_tab_selected_style(), "color": "#ff6b35"}, children=tab_alerts()),
     ]),
 
 ], style={
@@ -625,7 +731,56 @@ def update_live_feed(events):
     return [live_feed_item(e) for e in events[:100]]
 
 
-# 9. PDF Export
+# 9. Load alerts data (independent of main filter — alerts aren't time-windowed)
+@app.callback(
+    Output("store-alerts",       "data"),
+    Output("tab-alerts-label",   "label"),
+    Input("auto-refresh",        "n_intervals"),
+    Input("btn-refresh",         "n_clicks"),
+)
+def load_alerts_data(n_intervals, n_clicks):
+    try:
+        alerts = get_alerts(limit=50)
+        unresolved = sum(1 for a in alerts if not a.get("resolved", False))
+        label = f"⚠ Alerts  [{unresolved}]" if unresolved > 0 else "⚠ Alerts"
+        return alerts, label
+    except Exception as e:
+        logger.error(f"Alerts load failed: {e}")
+        return [], "⚠ Alerts"
+
+
+# 10. Render alerts tab
+@app.callback(
+    Output("alerts-container", "children"),
+    Output("alerts-summary",   "children"),
+    Input("store-alerts",      "data"),
+)
+def update_alerts_tab(alerts):
+    if not alerts:
+        return (
+            html.Div("No alerts yet — alert engine fires after each ingestion run.", style={
+                "color": "#527a99", "fontFamily": "Share Tech Mono, monospace",
+                "textAlign": "center", "padding": "60px 20px", "fontSize": "11px",
+            }),
+            "No alerts on record",
+        )
+
+    total      = len(alerts)
+    unresolved = sum(1 for a in alerts if not a.get("resolved", False))
+    critical   = sum(1 for a in alerts if a.get("severity") == "Critical")
+    high       = sum(1 for a in alerts if a.get("severity") == "High")
+
+    summary = (
+        f"Showing {total} alert{'s' if total != 1 else ''}  ·  "
+        f"🔴 {unresolved} active  ·  "
+        f"Critical: {critical}  ·  High: {high}"
+    )
+
+    cards = [alert_card(a) for a in alerts]
+    return cards, summary
+
+
+# 11. PDF Export
 @app.callback(
     Output("download-pdf",   "data"),
     Output("export-status",  "children"),

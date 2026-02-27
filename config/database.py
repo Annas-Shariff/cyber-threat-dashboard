@@ -331,6 +331,29 @@ def get_top_cves(limit: int = 20) -> List[dict]:
     return docs
 
 
+def get_alerts(limit: int = 50, resolved: Optional[bool] = None) -> List[dict]:
+    """Fetch alerts stored by the alert engine, newest first."""
+    collection = get_db()[COLLECTION_ALERTS]
+    query: dict = {}
+    if resolved is not None:
+        query["resolved"] = resolved
+    cursor = (
+        collection
+        .find(query)
+        .sort("created_at", DESCENDING)
+        .limit(limit)
+    )
+    docs = list(cursor)
+    for d in docs:
+        d.pop("_id", None)
+    return docs
+
+
+def get_unresolved_alert_count() -> int:
+    """Count of alerts that have not been resolved — used for the badge."""
+    return get_db()[COLLECTION_ALERTS].count_documents({"resolved": False})
+
+
 def get_severity_distribution(hours_back: int = 24,
                               attack_type: str = None,
                               severity: str = None) -> List[dict]:

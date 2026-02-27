@@ -208,51 +208,35 @@ def generate_pdf_report(
     story.append(kpi_table)
     story.append(Spacer(1, 0.8 * cm))
 
-    # ── Severity breakdown table ───────────────────────────────────────────
+    # ── Severity distribution — visual bar chart (native ReportLab, no kaleido) ──
     if severity_data:
         story.append(Paragraph("SEVERITY DISTRIBUTION", styles["section_label"]))
-        story.append(Spacer(1, 0.3 * cm))
-
-        sev_rows = [["Severity Level", "Event Count", "% of Total"]]
-        total    = sum(s.get("count", 0) for s in severity_data)
-        for s in sorted(severity_data, key=lambda x: ["Critical","High","Medium","Low"].index(x.get("severity","Low")) if x.get("severity") in ["Critical","High","Medium","Low"] else 99):
-            pct = f"{(s['count']/total*100):.1f}%" if total else "0%"
-            sev_rows.append([s.get("severity","?"), str(s.get("count",0)), pct])
-
-        sev_table = Table(sev_rows, colWidths=[6 * cm, 5 * cm, 5 * cm])
-        sev_style = [
-            ("BACKGROUND",  (0, 0), (-1, 0), C_DARK),
-            ("TEXTCOLOR",   (0, 0), (-1, 0), C_MUTED),
-            ("FONTNAME",    (0, 0), (-1, 0), "Helvetica"),
-            ("FONTSIZE",    (0, 0), (-1, -1), 10),
-            ("ALIGN",       (0, 0), (-1, -1), "CENTER"),
-            ("BOX",         (0, 0), (-1, -1), 1, C_BORDER),
-            ("INNERGRID",   (0, 0), (-1, -1), 0.5, C_BORDER),
-            ("TOPPADDING",  (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]
-        for i, row in enumerate(sev_rows[1:], 1):
-            sev_level = row[0]
-            color     = SEVERITY_COLORS.get(sev_level, C_TEXT)
-            sev_style.append(("TEXTCOLOR", (0, i), (0, i), color))
-            sev_style.append(("FONTNAME",  (0, i), (-1, i), "Helvetica-Bold"))
-            sev_style.append(("BACKGROUND",(0, i), (-1, i), C_PANEL if i % 2 else C_DARK))
-
-        sev_table.setStyle(TableStyle(sev_style))
-        story.append(sev_table)
+        story.append(Spacer(1, 0.4 * cm))
+        for item in _build_severity_bars(severity_data):
+            story.append(item)
 
     story.append(PageBreak())
 
-    # ══ PAGE 2: Charts ═════════════════════════════════════════════════════
+    # ══ PAGE 2: Attack Analysis ════════════════════════════════════════════
 
-    story.append(Paragraph("ATTACK TREND ANALYSIS", styles["section_title"]))
-    story.append(Spacer(1, 0.3 * cm))
+    story.append(Paragraph("ATTACK TYPE BREAKDOWN", styles["section_title"]))
+    story.append(Spacer(1, 0.4 * cm))
 
-    # Time series chart
+    # Attack type visual bar chart (native ReportLab, no kaleido)
+    if attack_counts:
+        story.append(Paragraph("EVENTS BY ATTACK TYPE", styles["section_label"]))
+        story.append(Spacer(1, 0.3 * cm))
+        for item in _build_attack_bars(attack_counts):
+            story.append(item)
+        story.append(Spacer(1, 0.8 * cm))
+
+    # Time-series chart (kaleido — optional, skipped if not installed)
     try:
         fig_ts  = build_timeseries_chart(hourly)
         img_ts  = _export_chart_as_image(fig_ts, 900, 320)
         if img_ts:
+            story.append(Paragraph("ATTACK FREQUENCY OVER TIME", styles["section_label"]))
+            story.append(Spacer(1, 0.3 * cm))
             story.append(Image(io.BytesIO(img_ts), width=17 * cm, height=6 * cm))
             story.append(Paragraph(
                 "Figure 1: Attack frequency over the reporting period. Spikes indicate potential coordinated attack waves.",
@@ -260,30 +244,6 @@ def generate_pdf_report(
             ))
     except Exception as e:
         logger.warning(f"Time series chart failed: {e}")
-
-    story.append(Spacer(1, 0.5 * cm))
-
-    # Side-by-side: attack bar + severity donut
-    try:
-        fig_bar  = build_attack_type_bar(attack_counts)
-        fig_sev  = build_severity_donut(severity_data)
-        img_bar  = _export_chart_as_image(fig_bar, 500, 300)
-        img_sev  = _export_chart_as_image(fig_sev, 400, 300)
-
-        if img_bar and img_sev:
-            chart_row = [[
-                Image(io.BytesIO(img_bar), width=9 * cm, height=5.5 * cm),
-                Image(io.BytesIO(img_sev), width=7 * cm, height=5.5 * cm),
-            ]]
-            chart_table = Table(chart_row, colWidths=[9.5 * cm, 7.5 * cm])
-            chart_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
-            story.append(chart_table)
-            story.append(Paragraph(
-                "Figure 2 (left): Attack distribution by type. Figure 3 (right): Severity level breakdown.",
-                styles["caption"]
-            ))
-    except Exception as e:
-        logger.warning(f"Bar/donut charts failed: {e}")
 
     story.append(PageBreak())
 
@@ -482,6 +442,138 @@ def _build_styles() -> dict:
             alignment=TA_CENTER,
         ),
     }
+
+
+def _build_severity_bars(severity_data: list) -> list:
+    """
+    Native ReportLab horizontal bar chart for severity distribution.
+    No kaleido or matplotlib needed — pure ReportLab Tables.
+    Each row: [Label | Filled bar | Empty remainder | Count | Pct%]
+    """
+    ORDER  = ["Critical", "High", "Medium", "Low"]
+    COLORS = {
+        "Critical": HexColor("#ff3355"),
+        "High":     HexColor("#ff6b35"),
+        "Medium":   HexColor("#ffd700"),
+        "Low":      HexColor("#00ff88"),
+    }
+    total = sum(s.get("count", 0) for s in severity_data)
+    if not total:
+        return []
+
+    sorted_data = sorted(
+        severity_data,
+        key=lambda x: ORDER.index(x.get("severity", "Low"))
+        if x.get("severity") in ORDER else 99,
+    )
+
+    LABEL_W = 2.5 * cm
+    BAR_MAX = 9.5 * cm   # max bar fills this width at 100%
+    COUNT_W = 2.0 * cm
+    PCT_W   = 1.5 * cm
+
+    items = []
+    for s in sorted_data:
+        sev   = s.get("severity", "?")
+        count = s.get("count", 0)
+        pct   = count / total
+        color = COLORS.get(sev, HexColor("#527a99"))
+
+        bar_filled = max(0.25 * cm, pct * BAR_MAX)
+        bar_empty  = BAR_MAX - bar_filled
+
+        row_table = Table(
+            [[sev, "", "", f"{count:,}", f"{pct * 100:.1f}%"]],
+            colWidths=[LABEL_W, bar_filled, bar_empty, COUNT_W, PCT_W],
+        )
+        row_table.setStyle(TableStyle([
+            # Label cell
+            ("BACKGROUND",    (0, 0), (0, 0), C_DARK),
+            ("TEXTCOLOR",     (0, 0), (0, 0), color),
+            ("FONTNAME",      (0, 0), (0, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (0, 0), 10),
+            ("ALIGN",         (0, 0), (0, 0), "RIGHT"),
+            ("RIGHTPADDING",  (0, 0), (0, 0), 8),
+            # Filled bar
+            ("BACKGROUND",    (1, 0), (1, 0), color),
+            ("LEFTPADDING",   (1, 0), (1, 0), 0),
+            ("RIGHTPADDING",  (1, 0), (1, 0), 0),
+            # Empty bar remainder
+            ("BACKGROUND",    (2, 0), (2, 0), HexColor("#0d1e2e")),
+            ("LEFTPADDING",   (2, 0), (2, 0), 0),
+            ("RIGHTPADDING",  (2, 0), (2, 0), 0),
+            # Count + pct cells
+            ("BACKGROUND",    (3, 0), (4, 0), C_DARK),
+            ("TEXTCOLOR",     (3, 0), (4, 0), C_TEXT),
+            ("FONTNAME",      (3, 0), (4, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (3, 0), (4, 0), 10),
+            ("ALIGN",         (3, 0), (4, 0), "CENTER"),
+            # Row height & padding
+            ("TOPPADDING",    (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING",   (0, 0), (0, 0), 4),
+            ("INNERGRID",     (0, 0), (-1, -1), 0, white),
+            ("BOX",           (0, 0), (-1, -1), 0.5, HexColor("#0f3a5c")),
+        ]))
+        items.append(row_table)
+        items.append(Spacer(1, 3))
+
+    return items
+
+
+def _build_attack_bars(attack_counts: list, top_n: int = 10) -> list:
+    """
+    Native ReportLab horizontal bar chart for attack type distribution.
+    Same approach as severity bars — pure ReportLab, no kaleido.
+    """
+    BAR_COLOR = HexColor("#00d4ff")
+    sorted_data = sorted(attack_counts, key=lambda x: x.get("count", 0), reverse=True)[:top_n]
+    max_count   = max((a.get("count", 0) for a in sorted_data), default=1)
+
+    LABEL_W = 3.5 * cm
+    BAR_MAX = 9.5 * cm
+    COUNT_W = 2.5 * cm
+
+    items = []
+    for a in sorted_data:
+        label = a.get("attack_type", "Unknown")
+        count = a.get("count", 0)
+        pct   = count / max_count if max_count else 0
+
+        bar_filled = max(0.2 * cm, pct * BAR_MAX)
+        bar_empty  = BAR_MAX - bar_filled
+
+        row_table = Table(
+            [[label, "", "", f"{count:,}"]],
+            colWidths=[LABEL_W, bar_filled, bar_empty, COUNT_W],
+        )
+        row_table.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (0, 0), C_DARK),
+            ("TEXTCOLOR",     (0, 0), (0, 0), C_TEXT),
+            ("FONTNAME",      (0, 0), (0, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (0, 0), 9),
+            ("ALIGN",         (0, 0), (0, 0), "RIGHT"),
+            ("RIGHTPADDING",  (0, 0), (0, 0), 8),
+            ("BACKGROUND",    (1, 0), (1, 0), BAR_COLOR),
+            ("LEFTPADDING",   (1, 0), (1, 0), 0),
+            ("RIGHTPADDING",  (1, 0), (1, 0), 0),
+            ("BACKGROUND",    (2, 0), (2, 0), HexColor("#0d1e2e")),
+            ("LEFTPADDING",   (2, 0), (2, 0), 0),
+            ("RIGHTPADDING",  (2, 0), (2, 0), 0),
+            ("BACKGROUND",    (3, 0), (3, 0), C_DARK),
+            ("TEXTCOLOR",     (3, 0), (3, 0), C_MUTED),
+            ("FONTNAME",      (3, 0), (3, 0), "Helvetica"),
+            ("FONTSIZE",      (3, 0), (3, 0), 9),
+            ("ALIGN",         (3, 0), (3, 0), "CENTER"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("INNERGRID",     (0, 0), (-1, -1), 0, white),
+            ("BOX",           (0, 0), (-1, -1), 0.5, HexColor("#0f3a5c")),
+        ]))
+        items.append(row_table)
+        items.append(Spacer(1, 3))
+
+    return items
 
 
 def _page_template(canvas, doc):
