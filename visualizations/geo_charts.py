@@ -10,6 +10,7 @@ geo_charts.py — Module 3: Geospatial & Hierarchical Visualizations
 import logging
 from typing import List, Dict, Optional
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -38,36 +39,41 @@ def build_choropleth_map(country_data: List[dict]) -> go.Figure:
 
     df = pd.DataFrame(country_data)
 
-    # Custom red-threat colorscale
+    # Log-scale the counts so high outliers (e.g. China 800) don't wash out
+    # all other countries — log1p(1)=0.69, log1p(50)=3.9, log1p(800)=6.7
+    df["z_log"] = np.log1p(df["count"])
+
+    # Colorscale: cyan (low) → green → yellow → orange → red (high)
+    # Every country gets a clearly visible colour on the dark map background
     threat_colorscale = [
-        [0.00, COLORS["panel"]],
-        [0.15, "#0a2a1a"],
-        [0.35, "#1a5c2a"],
-        [0.55, "#8b7000"],
-        [0.75, COLORS["high"]],
-        [1.00, COLORS["critical"]],
+        [0.00, "#0077cc"],   # deep blue   — very few events
+        [0.25, "#00cc88"],   # cyan-green  — moderate
+        [0.50, "#ffd700"],   # yellow      — elevated
+        [0.75, COLORS["high"]],    # orange — high
+        [1.00, COLORS["critical"]], # red   — critical
     ]
 
     fig = go.Figure(go.Choropleth(
         locations          = df["country"],
-        z                  = df["count"],
+        z                  = df["z_log"],          # log-scaled for even spread
+        customdata         = df[["country", "count", "avg_severity"]].values,
         locationmode       = "country names",
         colorscale         = threat_colorscale,
         autocolorscale     = False,
         reversescale       = False,
         marker_line_color  = COLORS["border"],
         marker_line_width  = 0.5,
+        showscale          = True,
         colorbar = dict(
-            title     = dict(text="Threat Events", font=dict(size=10, color=COLORS["muted"])),
-            tickfont  = dict(size=9, color=COLORS["muted"]),
+            title        = dict(text="Threat Events (log)", font=dict(size=10, color=COLORS["muted"])),
+            tickfont     = dict(size=9, color=COLORS["muted"]),
             outlinewidth = 0,
-            thickness = 12,
+            thickness    = 12,
         ),
-        customdata = df[["country", "avg_severity"]].values,
         hovertemplate = (
             "<b>%{customdata[0]}</b><br>"
-            "Events: %{z:,}<br>"
-            "Avg Severity: %{customdata[1]:.1f}<br>"
+            "Events: %{customdata[1]:,}<br>"
+            "Avg Severity: %{customdata[2]:.1f}<br>"
             "<extra></extra>"
         ),
     ))
