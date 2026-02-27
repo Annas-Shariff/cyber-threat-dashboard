@@ -345,18 +345,25 @@ def build_top_countries_bar(country_data: List[dict], top_n: int = 15) -> go.Fig
         elif sev >= 4: colors.append(COLORS["medium"])
         else:          colors.append(COLORS["low"])
 
+    max_count = df["count"].max() if not df.empty else 1
+
     fig = go.Figure(go.Bar(
         y           = df["country"],
         x           = df["count"],
         orientation = "h",
         marker      = dict(color=colors, line=dict(color="rgba(255,255,255,0.05)", width=1)),
-        text        = [f"{row['count']:,}  (sev: {row.get('avg_severity', 0):.1f})" for _, row in df.iterrows()],
-        textposition= "outside",
-        textfont    = dict(size=10, color=COLORS["muted"]),
-        hovertemplate = "<b>%{y}</b><br>Events: %{x}<extra></extra>",
+        text        = [f"{row['count']:,}  (avg sev: {row.get('avg_severity', 0):.1f})" for _, row in df.iterrows()],
+        textposition= "inside",
+        insidetextanchor = "end",
+        textfont    = dict(size=10, color="#ffffff"),
+        hovertemplate = "<b>%{y}</b><br>Events: %{x:,}<extra></extra>",
     ))
 
-    fig.update_layout(yaxis=dict(showgrid=False))
+    fig.update_layout(
+        yaxis  = dict(showgrid=False, automargin=True),
+        xaxis  = dict(range=[0, max_count * 1.05]),
+        margin = dict(l=120, r=24, t=40, b=16),
+    )
     return _apply_base(fig, "Top Attack Source Countries")
 
 

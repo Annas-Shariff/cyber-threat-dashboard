@@ -49,9 +49,9 @@ def build_choropleth_map(country_data: List[dict]) -> go.Figure:
     ]
 
     fig = go.Figure(go.Choropleth(
-        locations          = df["country_code"],
+        locations          = df["country"],
         z                  = df["count"],
-        locationmode       = "ISO-3",
+        locationmode       = "country names",
         colorscale         = threat_colorscale,
         autocolorscale     = False,
         reversescale       = False,
@@ -82,8 +82,6 @@ def build_choropleth_map(country_data: List[dict]) -> go.Figure:
         oceancolor      = COLORS["bg"],
         showlakes       = False,
         showrivers      = False,
-        showgraticules  = True,
-        graticulecolor  = "rgba(15,58,92,0.3)",
         bgcolor         = COLORS["bg"],
         projection_type = "natural earth",
     )
@@ -174,8 +172,6 @@ def build_scatter_geo_map(events_data: List[dict], max_points: int = 500) -> go.
         landcolor       = "#0d1f2d",
         showocean       = True,
         oceancolor      = COLORS["bg"],
-        showgraticules  = True,
-        graticulecolor  = "rgba(15,58,92,0.2)",
         bgcolor         = COLORS["bg"],
         projection_type = "natural earth",
     )
@@ -390,6 +386,9 @@ def build_country_attack_bubble(events_data: List[dict], top_countries: int = 10
         count        = ("attack_type", "count"),
         avg_severity = ("severity_score", "mean"),
     ).reset_index()
+
+    if agg.empty:
+        return _empty_fig("No country data for current filter")
 
     fig = go.Figure(go.Scatter(
         x           = agg["attack_type"],
