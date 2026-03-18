@@ -10,16 +10,28 @@ Then open: http://localhost:8050
 """
 def _tab_style():
     return {
-        "padding": "10px",
-        "fontWeight": "bold"
+        "padding": "10px 16px",
+        "fontWeight": "600",
+        "backgroundColor": "#0a1520",
+        "color": "#527a99",
+        "border": "1px solid #0f3a5c",
+        "borderBottom": "none",
+        "fontFamily": "Rajdhani, sans-serif",
+        "fontSize": "13px",
+        "letterSpacing": "0.5px",
     }
 
 def _tab_selected_style():
     return {
-        "padding": "10px",
-        "fontWeight": "bold",
-        "backgroundColor": "#119DFF",
-        "color": "white"
+        "padding": "10px 16px",
+        "fontWeight": "700",
+        "backgroundColor": "#0d2035",
+        "color": "#00d4ff",
+        "border": "1px solid #00d4ff",
+        "borderBottom": "2px solid #00d4ff",
+        "fontFamily": "Rajdhani, sans-serif",
+        "fontSize": "13px",
+        "letterSpacing": "0.5px",
     }
 
 import logging
@@ -537,7 +549,7 @@ app.layout = html.Div([
 
     # Tabs — all content pre-rendered so chart IDs always exist in the DOM
     # This ensures dropdown filter callbacks always find their output components
-    dcc.Tabs(id="tabs", value="overview", style={
+    dcc.Tabs(id="tabs", value="overview", mobile_breakpoint=0, style={
         "fontFamily": "Rajdhani, monospace",
         "backgroundColor": "#050a0f",
     }, children=[
@@ -558,7 +570,7 @@ app.layout = html.Div([
 
 def _tab_style():
     return {
-        "backgroundColor": "#050a0f", "color": "#527a99",
+        "backgroundColor": "#050a0f", "color": "#0f1720",
         "border": "none", "borderBottom": "2px solid transparent",
         "fontFamily": "Rajdhani, monospace", "fontSize": "13px",
         "letterSpacing": "1px", "padding": "10px 20px",
